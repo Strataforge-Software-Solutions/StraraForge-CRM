@@ -1,9 +1,6 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# Repository guidance
 
-## This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
+- This app is a client-rendered React single-page application built with Vite and React Router. Do not reintroduce Next.js server components or server actions.
+- Configure the browser Supabase client only with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Never put a service-role key or other secret in a `VITE_` variable; all `VITE_` values ship to browsers.
+- Keep authentication at AAL2 and rely on the database workspace RLS policies and RPC validation for record access and sensitive multi-record changes.
+- Use `npm run check` for TypeScript and production-build verification.

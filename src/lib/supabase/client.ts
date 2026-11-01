@@ -1,12 +1,15 @@
-import { createBrowserClient } from "@supabase/ssr";
+import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { requireSupabaseConfig } from "@/lib/supabase/config";
 
-let browserClient: ReturnType<typeof createBrowserClient> | null = null;
+let browserClient: SupabaseClient<any> | null = null;
 
-export function createClient() {
+export function createClient(): SupabaseClient<any> {
   if (!browserClient) {
     const { url, publishableKey } = requireSupabaseConfig();
-    browserClient = createBrowserClient(url, publishableKey);
+    browserClient = createSupabaseClient<any>(url, publishableKey, {
+      // AuthCallback owns code and recovery-link exchange so each link is consumed once.
+      auth: { detectSessionInUrl: false, flowType: "pkce", persistSession: true, autoRefreshToken: true }
+    });
   }
   return browserClient;
 }

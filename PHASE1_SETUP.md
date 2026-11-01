@@ -1,10 +1,10 @@
 # Phase 1 setup and verification
 
-This local foundation is intentionally unconnected. It does not contain founder emails, provider credentials, or a live database. Keep `.env.local` private and untracked. A successful build does not prove live authentication or database policy behavior.
+This local foundation is connected to StrataForge's Supabase test project and has founder membership data. Google OAuth is not yet configured: the Google provider is disabled and has no client credentials. Keep `.env.local` private and untracked. A successful build does not prove live authentication or database policy behavior.
 
 ## Technology choice
 
-- Next.js App Router and TypeScript for a server-rendered, responsive web application.
+- React, TypeScript, Vite, and React Router for a client-rendered single-page application.
 - Supabase Auth for Google and email/password sign-in with an application-enforced TOTP second factor.
 - Supabase Postgres for the workspace membership boundary and a read-only audit-event table. Later CRM tables must have their own grants and row-level security (RLS) policies. Future sensitive mutations must write their audit event in the same trusted transaction.
 
@@ -12,8 +12,8 @@ This is a local-only Phase 1 checkout. No site has been registered, published, o
 
 ## Connect a private Supabase project
 
-1. Create a Supabase project under an organization controlled by StrataForge and enable MFA on the Supabase administrator accounts as well as in the CRM. Choose a region based on where the founders and expected client data reside; changing it later may require migration. Configure the email/password provider and confirmed email. TOTP is available in hosted Supabase, but confirm enrollment and verification are enabled. Set a strong server-enforced password minimum (at least 12 characters) and appropriate Auth rate limits. Configure a production SMTP service before relying on invitations or recovery emails. Disable anonymous sign-ins. Never put a secret or service-role key in `NEXT_PUBLIC_` variables.
-2. Set Supabase Auth **Site URL** to the exact CRM origin (for local development, `http://localhost:3000`, with no trailing slash). Add `http://localhost:3000/auth/callback` to the Supabase **allowed redirect URLs**. In Google Cloud, create a web OAuth client; its authorized redirect URI is the **Supabase provider callback URL** shown in the Supabase Google provider settings, not the app's `/auth/callback`. Add the app origin as a Google authorized JavaScript origin. Put the Google Client ID and Secret only in Supabase's provider settings. Add exact production URLs before deployment. Copy `supabase/email-templates/invite.html` and `supabase/email-templates/recovery.html` into the corresponding hosted Auth email templates. These templates use a one-time token hash to reach `/auth/confirm`.
+1. Use the existing Supabase project; do not create another one. Enable MFA on Supabase administrator accounts as well as in the CRM. Configure the email/password provider and confirmed email. Set a strong server-enforced password minimum (at least 12 characters), disable anonymous sign-ins and public self-sign-up after founder provisioning, and configure custom SMTP before relying on invitation or recovery email. Never put a secret or service-role key in a `VITE_` variable; those values are sent to browsers.
+2. Set the Supabase Auth **Site URL** to the app origin `http://localhost:3000` (without a path). Add `http://localhost:3000/auth/*` and the matching `127.0.0.1` callback URLs to the redirect allowlist. Paste `supabase/email-templates/recovery.html` and `invite.html` into their matching Supabase Auth email templates after changing them. For Google Cloud, create a Web application OAuth client. Its authorized redirect URI must be the **Supabase provider callback URL** shown in Supabase Google provider settings, not the app's `/auth/callback`. Add the local CRM origin (`http://localhost:3000`) as an authorized JavaScript origin. Add the resulting Google Client ID and Secret only in Supabase's provider settings, enable Google there, and add invited founders as OAuth consent-screen test users. Before deployment, set the Site URL to the production app origin, add the production app callbacks to Supabase's allowlist, and add the production origin to Google. Custom hosted Auth email templates require custom SMTP on this project; without them, Supabase's default template redirects to the Site URL.
 3. Apply `supabase/migrations/202610300001_foundation.sql` through the Supabase migration workflow. In a trusted administrative SQL session, create the StrataForge workspace and record the returned ID:
 
    ```sql
@@ -32,7 +32,7 @@ This is a local-only Phase 1 checkout. No site has been registered, published, o
    ```
 
    Do not expose an admin invitation API or secret key to the browser, and do not add membership from browser code. The founders can then open their links and set their passwords and authenticators. Disable public self-sign-up after the founder identities are provisioned. Google sign-in must resolve to the intended invited account; test automatic linking with the same verified email or use an authenticated linking flow. A separate Google identity must never gain membership just because its email text matches. The browser can read only its own active membership at AAL1; workspace and audit data require AAL2.
-5. Copy `.env.example` to `.env.local`. Enter the project URL and publishable key. Generate a stable random `AUTH_FLOW_SECRET` of at least 32 characters, for example with `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"`, and keep it server-only. The secret signs a short-lived, HTTP-only invitation/recovery flow cookie. Set all environment variables **before** building the app; browser-visible `NEXT_PUBLIC_` values are embedded in the build. Then run `npm install` and `npm run dev`.
+5. Copy `.env.example` to `.env.local` and enter only `VITE_SUPABASE_URL` and the Supabase publishable key as `VITE_SUPABASE_PUBLISHABLE_KEY`. The Vite client bundle exposes both values by design; database access must remain protected by workspace RLS policies and RPC validation. No service-role key or private auth secret belongs in the browser app. Then run `npm install` and `npm run dev`.
 
 Provider setup references: [Supabase Google sign-in](https://supabase.com/docs/guides/auth/social-login/auth-google), [redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls), [identity linking](https://supabase.com/docs/guides/auth/auth-identity-linking), [TOTP MFA](https://supabase.com/docs/guides/auth/auth-mfa/totp), and [Supabase account MFA](https://supabase.com/docs/guides/platform/multi-factor-authentication).
 
@@ -48,7 +48,7 @@ The application fails closed when configuration is missing. No CRM data is avail
 - An invited founder at AAL1 cannot read the workspace through the browser or the Supabase Data API; after TOTP, the same account can read only its permitted workspace.
 - Anonymous access, revoked membership, expired session, and invalid TOTP all fail without exposing CRM records.
 - Test account recovery and Google/password identity linking with dummy founder accounts before production use.
-- Verify the migration's table grants and RLS policies in the connected project, including that browser clients cannot insert, update, or delete audit events. This cannot be proven by a successful Next.js build alone.
+- Verify the migration's table grants and RLS policies in the connected project, including that browser clients cannot insert, update, or delete audit events. A successful Vite build alone does not prove live authentication or database policy behavior.
 - Review sign-in, invitation, recovery, MFA, dashboard, and account at desktop, tablet, 320 CSS px, keyboard-only, and reduced-motion settings. The current environment could not reach its local browser preview.
 
 ## Current verification

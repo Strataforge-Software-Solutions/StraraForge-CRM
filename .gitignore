@@ -6,3 +6,5 @@ node_modules/
 *.tsbuildinfo
 npm-debug.log*
 
+
+dist/

@@ -1,6 +1,7 @@
 -- Phase 2: shared CRM records. Apply only after the Phase 1 foundation.
 -- All data is workspace-scoped. Browser sessions need an active membership
 -- and AAL2; deletes are intentionally unavailable (archive records instead).
+begin;
 
 create table public.clients (
   id uuid primary key default gen_random_uuid(),
@@ -224,11 +225,46 @@ security definer
 set search_path = ''
 as $$
 begin
-  if old.status = 'accepted'
-     and (new.status, new.amount, new.currency, new.scope_summary, new.accepted_at, new.acceptance_note, new.acceptance_evidence_type, new.acceptance_evidence_ref)
-       is distinct from
-         (old.status, old.amount, old.currency, old.scope_summary, old.accepted_at, old.acceptance_note, old.acceptance_evidence_type, old.acceptance_evidence_ref) then
+  if old.status = 'accepted' then
     raise exception 'An accepted proposal is immutable; create a new version';
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function private.protect_project_agreement()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.id <> old.id then
+    raise exception 'Project agreement terms are immutable; create a new proposal version for changed terms';
+  end if;
+  if new.workspace_id <> old.workspace_id then
+    raise exception 'Project agreement terms are immutable; create a new proposal version for changed terms';
+  end if;
+  if new.lead_id <> old.lead_id then
+    raise exception 'Project agreement terms are immutable; create a new proposal version for changed terms';
+  end if;
+  if new.client_id <> old.client_id then
+    raise exception 'Project agreement terms are immutable; create a new proposal version for changed terms';
+  end if;
+  if new.accepted_proposal_id <> old.accepted_proposal_id then
+    raise exception 'Project agreement terms are immutable; create a new proposal version for changed terms';
+  end if;
+  if new.agreed_amount <> old.agreed_amount then
+    raise exception 'Project agreement terms are immutable; create a new proposal version for changed terms';
+  end if;
+  if new.currency <> old.currency then
+    raise exception 'Project agreement terms are immutable; create a new proposal version for changed terms';
+  end if;
+  if new.created_by <> old.created_by then
+    raise exception 'Project agreement terms are immutable; create a new proposal version for changed terms';
+  end if;
+  if new.created_at <> old.created_at then
+    raise exception 'Project agreement terms are immutable; create a new proposal version for changed terms';
   end if;
   return new;
 end;
@@ -337,6 +373,7 @@ revoke all on function private.validate_project_conversion() from public, anon, 
 revoke all on function private.complete_project_conversion() from public, anon, authenticated;
 revoke all on function private.validate_won_lead() from public, anon, authenticated;
 revoke all on function private.protect_accepted_proposal() from public, anon, authenticated;
+revoke all on function private.protect_project_agreement() from public, anon, authenticated;
 
 create trigger validate_payment_entry before insert on public.payment_entries
   for each row execute function private.validate_payment_entry();
@@ -348,6 +385,8 @@ create trigger validate_won_lead before update of stage on public.leads
   for each row execute function private.validate_won_lead();
 create trigger protect_accepted_proposal before update on public.proposals
   for each row execute function private.protect_accepted_proposal();
+create trigger protect_project_agreement before update on public.projects
+  for each row execute function private.protect_project_agreement();
 
 do $$
 declare table_name text;
@@ -364,8 +403,10 @@ begin
       execute format('create trigger %I before update on public.%I for each row execute function private.touch_crm_record()', 'touch_' || table_name, table_name);
       execute format('create trigger %I after insert or update on public.%I for each row execute function private.audit_crm_record_change()', 'audit_' || table_name, table_name);
     else
-      execute format('create trigger %I after insert on public.%I for each row execute function private.audit_crm_record_change()', 'audit_' || table_name, table_name);
+      -- Project conversion links the deposit after inserting the project; record that update too.
+      execute format('create trigger %I after insert or update on public.%I for each row execute function private.audit_crm_record_change()', 'audit_' || table_name, table_name);
     end if;
   end loop;
 end;
 $$;
+commit;
