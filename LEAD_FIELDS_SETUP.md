@@ -2,7 +2,7 @@
 
 The lead edit form can save other fields and images without these optional columns, but Location and Timeline require the database schema update.
 
-1. In the trusted Supabase project's SQL Editor, run `supabase/migrations/202610310003_lead_location.sql`, then `supabase/migrations/202610310005_lead_timeline.sql`. Both scripts can be rerun safely and notify PostgREST to reload its schema cache.
+1. In the trusted Supabase project's SQL Editor, run `supabase/migrations/202610310003_lead_location.sql`, `supabase/migrations/202610310005_lead_timeline.sql`, and `supabase/migrations/202611020002_lead_project_type.sql`. These scripts can be rerun safely and notify PostgREST to reload its schema cache.
 2. Verify both columns are present:
 
    ```sql
@@ -10,7 +10,7 @@ The lead edit form can save other fields and images without these optional colum
    from information_schema.columns
    where table_schema = 'public'
      and table_name = 'leads'
-     and column_name in ('location', 'timeline')
+     and column_name in ('location', 'timeline', 'project_type')
    order by column_name;
    ```
 

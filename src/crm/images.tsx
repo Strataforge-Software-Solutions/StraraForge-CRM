@@ -78,7 +78,7 @@ export function ImagePicker({ files, onChange, disabled = false }: { files: File
   </section>;
 }
 
-export function RecordAvatar({ recordType, recordId, name, className, refreshKey = 0, fallbackLeadIds = [] }: { recordType: RecordImageType; recordId: string; name: string; className: string; refreshKey?: number; fallbackLeadIds?: string[] }) {
+export function RecordAvatar({ recordType, recordId, name, className, refreshKey = 0, fallbackClientId = "", fallbackLeadIds = [] }: { recordType: RecordImageType; recordId: string; name: string; className: string; refreshKey?: number; fallbackClientId?: string; fallbackLeadIds?: string[] }) {
   const { founder } = useAuth();
   const workspaceId = founder?.workspaceId ?? "";
   const fallbackKey = fallbackLeadIds.join(",");
@@ -95,15 +95,17 @@ export function RecordAvatar({ recordType, recordId, name, className, refreshKey
       async function latestImage(type: RecordImageType, id: string) {
         const prefix = `${workspaceId}/${type}/${id}`;
         const { data, error: listError } = await db().storage.from(bucket).list(prefix, { limit: 10, sortBy: { column: "created_at", order: "desc" } });
-        if (listError) throw listError;
+        if (listError) return null;
         const latest = data?.find((item) => /^[0-9a-f-]{36}\.(jpg|png|webp)$/i.test(item.name));
         if (!latest) return null;
         const { data: blob, error: downloadError } = await db().storage.from(bucket).download(`${prefix}/${latest.name}`);
-        if (downloadError) throw downloadError;
+        if (downloadError) return null;
         return blob;
       }
-      let blob = await latestImage(recordType, recordId);
-      if (!blob && recordType === "client") {
+      let blob = recordType === "project" && fallbackClientId ? await latestImage("client", fallbackClientId) : null;
+      if (!blob) blob = await latestImage(recordType, recordId);
+      if (!blob && fallbackClientId && recordType === "lead") blob = await latestImage("client", fallbackClientId);
+      if (!blob && (recordType === "client" || recordType === "project")) {
         for (const leadId of fallbackKey.split(",").filter(Boolean)) {
           if (!active) return;
           blob = await latestImage("lead", leadId);
@@ -116,7 +118,7 @@ export function RecordAvatar({ recordType, recordId, name, className, refreshKey
       setUrl(objectUrl);
     })().catch(() => { if (active) setFailed(true); });
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [workspaceId, recordType, recordId, refreshKey, fallbackKey]);
+  }, [workspaceId, recordType, recordId, refreshKey, fallbackClientId, fallbackKey]);
 
   return <span className={className} title={failed ? "Image unavailable; showing initials" : undefined}>{url ? <img src={url} alt="" onError={() => { setFailed(true); setUrl(""); }}/> : name.slice(0, 2).toUpperCase()}</span>;
 }
@@ -191,6 +193,7 @@ export function RecordImages({ recordType, recordId, title = "Images", pendingFi
     <p className="crm-image-muted">{saveWithForm ? "Selected images upload when you save changes. Removals are saved immediately." : "Uploads and removals are saved immediately."}</p>
     {recordType === "lead" && <p className="crm-image-muted">The newest saved image appears as the lead avatar.</p>}
     {recordType === "client" && <p className="crm-image-muted">The newest client image appears as the avatar. A linked lead image is used when this client has none.</p>}
+    {recordType === "project" && <p className="crm-image-muted">The newest project image appears beside the title. Client or lead images are used when this project has none.</p>}
     <ImagePicker files={pending} onChange={setPending} disabled={busy || disabled}/>
     {!saveWithForm && pending.length > 0 && <button type="button" className="button button-primary crm-image-upload" disabled={busy || disabled} onClick={() => void upload()}>{busy ? "Uploading…" : `Upload ${pending.length} ${pending.length === 1 ? "image" : "images"}`}</button>}
     {error && <div className="crm-image-error" role="alert">{error} <button type="button" onClick={() => setVersion((value) => value + 1)}>Refresh images</button></div>}

@@ -14,6 +14,8 @@ This is a local-only Phase 1 checkout. No site has been registered, published, o
 
 1. Use the existing Supabase project; do not create another one. Enable MFA on Supabase administrator accounts as well as in the CRM. Configure the email/password provider and confirmed email. Set a strong server-enforced password minimum (at least 12 characters), disable anonymous sign-ins and public self-sign-up after founder provisioning, and configure custom SMTP before relying on invitation or recovery email. Never put a secret or service-role key in a `VITE_` variable; those values are sent to browsers.
 2. Set the Supabase Auth **Site URL** to the app origin `http://localhost:3000` (without a path). Add `http://localhost:3000/auth/*` and the matching `127.0.0.1` callback URLs to the redirect allowlist. Paste `supabase/email-templates/recovery.html` and `invite.html` into their matching Supabase Auth email templates after changing them. For Google Cloud, create a Web application OAuth client. Its authorized redirect URI must be the **Supabase provider callback URL** shown in Supabase Google provider settings, not the app's `/auth/callback`. Add the local CRM origin (`http://localhost:3000`) as an authorized JavaScript origin. Add the resulting Google Client ID and Secret only in Supabase's provider settings, enable Google there, and add invited founders as OAuth consent-screen test users. Before deployment, set the Site URL to the production app origin, add the production app callbacks to Supabase's allowlist, and add the production origin to Google. Custom hosted Auth email templates require custom SMTP on this project; without them, Supabase's default template redirects to the Site URL.
+
+   Password recovery requests redirect to `/auth/callback?flow=recovery`. Confirm that this URL is in the redirect allowlist for each app origin. The local `/auth/*` wildcard covers it; production can use the exact URL. The Site URL must be the app origin so Supabase's default recovery email also returns to the correct app.
 3. Apply `supabase/migrations/202610300001_foundation.sql` through the Supabase migration workflow. In a trusted administrative SQL session, create the StrataForge workspace and record the returned ID:
 
    ```sql
@@ -37,6 +39,10 @@ This is a local-only Phase 1 checkout. No site has been registered, published, o
 Provider setup references: [Supabase Google sign-in](https://supabase.com/docs/guides/auth/social-login/auth-google), [redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls), [identity linking](https://supabase.com/docs/guides/auth/auth-identity-linking), [TOTP MFA](https://supabase.com/docs/guides/auth/auth-mfa/totp), and [Supabase account MFA](https://supabase.com/docs/guides/platform/multi-factor-authentication).
 
 The application fails closed when configuration is missing. No CRM data is available merely because someone has a valid Supabase account: membership and AAL2 are required.
+
+## Workspace access administration
+
+Apply `supabase/migrations/202611010009_workspace_access_admin.sql` in the trusted Supabase SQL Editor before using the Admin **Access** page. The page can grant a role to an existing Auth account only after its email is confirmed; send invitations for new accounts through Supabase Auth first. The database functions require an active AAL2 administrator, record grants and role changes in `audit_events`, and prevent removing the last active administrator. Roles are `admin`, `member`, and `developer`.
 
 ## Checks before treating sign-in as ready
 

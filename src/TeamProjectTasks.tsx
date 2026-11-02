@@ -11,11 +11,8 @@ const developmentStages = [
   ["new_feature", "New Feature", "#f35b18"],
   ["planned", "Planned", "#3384ef"],
   ["building", "Building", "#18a873"],
-  ["code_review", "Code Review", "#f2a20a"],
-  ["testing", "Testing / QA", "#3384ef"],
-  ["client_review", "UAT / Client Review (Optional)", "#9254e9"],
-  ["ready_to_deploy", "Ready to Deploy", "#18a873"],
-  ["released", "Released", "#109552"],
+  ["testing", "Testing/QA", "#f2a20a"],
+  ["deploy", "Deploy", "#109552"],
 ] as const;
 
 function dateText(value: string | null) {
@@ -31,6 +28,7 @@ export default function TeamProjectTasks() {
   const [projects, setProjects] = useState<ProjectOption[] | null>(null);
   const [tasks, setTasks] = useState<ProjectTask[] | null>(null);
   const [selectedProject, setSelectedProject] = useState(requestedProject);
+  const [projectFilter, setProjectFilter] = useState("all");
   const [loadError, setLoadError] = useState("");
   const [projectError, setProjectError] = useState("");
   const [formError, setFormError] = useState("");
@@ -64,9 +62,9 @@ export default function TeamProjectTasks() {
       }
       const rows = (result.data ?? []) as ProjectOption[];
       setProjects(rows);
-      const matched = rows.some((project) => project.project_id === requestedProject) ? requestedProject : rows[0]?.project_id ?? "";
+      const matched = rows.some((project) => project.project_id === requestedProject) ? requestedProject : "";
       setSelectedProject(matched);
-      if (matched !== requestedProject) setParams(matched ? { project: matched } : {}, { replace: true });
+      if (requestedProject && matched !== requestedProject) setParams({}, { replace: true });
     } catch (error) {
       setProjectError(error instanceof Error ? error.message : "The project list could not be loaded.");
     }
@@ -82,7 +80,7 @@ export default function TeamProjectTasks() {
       if (requestId !== taskRequestId.current) return null;
       if (result.error) { setLoadError(result.error.message || "Project tasks could not be loaded."); return false; }
       const rows = (result.data ?? []) as ProjectTask[];
-      setTasks(rows.map((task) => ({ ...task, development_stage: task.development_stage || (task.task_status === "completed" ? "released" : task.task_status === "in_progress" ? "building" : "new_feature") })));
+      setTasks(rows.map((task) => ({ ...task, development_stage: task.development_stage || (task.task_status === "completed" ? "deploy" : task.task_status === "in_progress" ? "building" : "new_feature") })));
       return true;
     } catch (error) {
       if (requestId !== taskRequestId.current) return null;
@@ -219,7 +217,7 @@ export default function TeamProjectTasks() {
       const result = await db().rpc("set_project_delivery_task_stage", { p_task_id: task.task_id, p_stage: stage });
       if (result.error) {
         const message = /PGRST202|set_project_delivery_task_stage/i.test(result.error.message)
-          ? "The development flow needs migration 202611010004_project_task_development_flow.sql applied in Supabase."
+          ? "The five-stage development flow needs migration 202611010011_five_stage_project_development_flow.sql applied in Supabase."
           : result.error.message || "Could not move this development task.";
         pendingArrivalRef.current = null;
         notify(message, true);
@@ -292,6 +290,7 @@ export default function TeamProjectTasks() {
   const backHref = selectedProject ? `/projects/${selectedProject}` : "/projects";
   const backLabel = selectedProject ? "Back to project" : "Back to projects";
   const backButton = <Link className="button button-secondary team-task-back-button" to={backHref}><span aria-hidden="true">←</span>{backLabel}</Link>;
+  const allProjectsButton = <button className="button button-secondary team-task-back-button" type="button" onClick={() => chooseProject("")}><span aria-hidden="true">←</span>All projects</button>;
   const toggleTaskQueue = () => {
     if (showSharedQueue) {
       closeTaskQueue();
@@ -315,9 +314,27 @@ export default function TeamProjectTasks() {
   if (projects === null && !projectError) return <><PageHeader eyebrow="Delivery team" title="Project tasks" description="Add delivery work, then claim an unassigned task so the team knows who owns it." action={backButton}/><Loading label="Loading active projects…"/></>;
   const availableProjects=projects??[];
   const projectSelect = <label className="field team-project-select"><span>Project</span><StageDropdown value={selectedProject} options={availableProjects.map((project) => project.project_id)} optionLabels={Object.fromEntries(availableProjects.map((project) => [project.project_id, project.project_name]))} disabled={!selectedProject} label="Choose project" onChange={chooseProject} minMenuWidth={260} className="team-project-select-dropdown"/></label>;
+  const projectFilters = [["all", "All projects"], ["planned", "Planned"], ["in_progress", "In progress"], ["on_hold", "On hold"]] as const;
+  const filteredProjects = availableProjects.filter((project) => projectFilter === "all" || project.project_status === projectFilter);
+  const totalProjectTasks = availableProjects.reduce((sum, project) => sum + Number(project.task_count || 0), 0);
+
+  if (!selectedProject && !projectError) return <>
+    <PageHeader eyebrow="Delivery team" title="Project tasks" description="Choose a project to open its delivery workflow." action={backButton}/>
+    <section className="team-project-overview-metrics" aria-label="Project delivery summary">
+      <article><span>Active projects</span><strong>{availableProjects.length}</strong><small>Projects ready for delivery</small></article>
+      <article className="is-accent"><span>In progress</span><strong>{availableProjects.filter((project) => project.project_status === "in_progress").length}</strong><small>Currently in delivery</small></article>
+      <article><span>Project tasks</span><strong>{totalProjectTasks}</strong><small>Work items across projects</small></article>
+      <article><span>Planned</span><strong>{availableProjects.filter((project) => project.project_status === "planned").length}</strong><small>Waiting to get started</small></article>
+    </section>
+    {availableProjects.length === 0 ? <section className="record-list-panel team-task-empty"><span className="team-task-empty-icon" aria-hidden="true">▱</span><strong>No active projects yet</strong><p>Project tasks will appear here after a co-founder creates an active project.</p></section> : <section className="team-project-overview">
+      <div className="team-project-overview-heading"><div><h2>Projects</h2><p>Select a project to open its development workflow.</p></div><span>{filteredProjects.length} {filteredProjects.length === 1 ? "project" : "projects"}</span></div>
+      <nav className="team-project-filter-list" aria-label="Filter projects by status">{projectFilters.map(([value, label]) => <button key={value} type="button" aria-pressed={projectFilter === value} className={projectFilter === value ? "is-active" : ""} onClick={() => setProjectFilter(value)}>{label}<strong>{value === "all" ? availableProjects.length : availableProjects.filter((project) => project.project_status === value).length}</strong></button>)}</nav>
+      {filteredProjects.length ? <div className="team-project-card-grid">{filteredProjects.map((project) => <button key={project.project_id} type="button" className="team-project-overview-card" onClick={() => chooseProject(project.project_id)}><span className="team-project-card-top"><span className="team-project-card-avatar">{project.project_name.trim().slice(0, 2).toUpperCase()}</span><span className={`team-project-card-status is-${project.project_status}`}>{project.project_status.replaceAll("_", " ")}</span></span><strong className="team-project-card-name">{project.project_name}</strong><span className="team-project-card-subtitle">{project.task_count} {project.task_count === 1 ? "task" : "tasks"}</span><span className="team-project-card-open">Open workflow <span aria-hidden="true">→</span></span></button>)}</div> : <div className="team-task-empty-inline"><strong>No projects in this status</strong><p>Choose another filter to see more projects.</p></div>}
+    </section>}
+    </>;
 
   return <>
-    <PageHeader eyebrow="Delivery team" title={activeProject?.project_name ?? "Project tasks"} description="Add delivery work, then claim an unassigned task so the team knows who owns it." action={<div className="team-task-page-actions">{projectSelect}<div className="team-task-page-button-row">{tasksButton}{newTaskButton}{backButton}</div></div>}/>
+    <PageHeader eyebrow="Delivery team" title={activeProject?.project_name ?? "Project tasks"} description="Add delivery work, then claim an unassigned task so the team knows who owns it." action={<div className="team-task-page-actions">{projectSelect}<div className="team-task-page-button-row">{tasksButton}{newTaskButton}{allProjectsButton}{backButton}</div></div>}/>
     {projectError ? <section className="record-list-panel team-task-load-state" role="alert"><span className="team-task-load-icon" aria-hidden="true">!</span><div><h2>Couldn’t load projects</h2><p>The project list is temporarily unavailable. Try again, or share the error below with your workspace admin.</p><code>{projectError}</code><button className="button button-primary" type="button" onClick={() => void loadProjects()}>Retry project list</button></div></section> : availableProjects.length === 0 ? <section className="record-list-panel team-task-empty"><span className="team-task-empty-icon" aria-hidden="true">▱</span><strong>No active projects yet</strong><p>Project tasks will appear here after a co-founder creates an active project.</p></section> : null}
     {showSharedQueue && !projectError && availableProjects.length > 0 && <Modal title="Tasks" description="Claim or manage shared delivery work for this project." onClose={closeTaskQueue} className="team-task-queue-dialog">
       <section id="shared-delivery-queue" className="record-list-panel team-task-board" aria-label="Shared delivery task queue" tabIndex={-1}>
@@ -339,7 +356,7 @@ export default function TeamProjectTasks() {
       <div className="form-actions"><button className="button button-secondary" type="button" disabled={saving} onClick={closeNewTask}>Cancel</button><button className="button button-primary" disabled={saving || !selectedProject}>{saving ? "Adding task…" : savedTaskId ? "Retry images" : "Add shared task"}</button></div>
     </form></Modal>}
     {!projectError && availableProjects.length > 0 && <section className="record-list-panel development-flow-panel" aria-labelledby="development-flow-title">
-      <div className="development-flow-heading"><div><p className="eyebrow">Development workflow</p><h2 id="development-flow-title">Feature Development Flow</h2><p>Track project work from request through release. Move a card with its stage menu or drag it into a column.</p></div><span className="development-flow-count">{tasks?.filter((task) => task.task_status !== "cancelled").length ?? 0} items</span></div>
+      <div className="development-flow-heading"><div><p className="eyebrow">Development workflow</p><h2 id="development-flow-title">Feature Development Flow</h2><p>Track project work from request through deployment across five stages. Move a card with its stage menu or drag it into a column.</p></div><span className="development-flow-count">{tasks?.filter((task) => task.task_status !== "cancelled").length ?? 0} items</span></div>
       {loadError && <div className="team-task-inline-error" role="alert"><div><strong>Development items couldn’t be synced</strong><p>{loadError}</p></div><button className="button button-secondary" type="button" onClick={() => void loadTasks(selectedProject)}>Retry</button></div>}
       {!tasks ? loadError ? null : <Loading label="Loading development items…"/> : <div className="development-flow-scroll" tabIndex={0} aria-label="Feature development stages" onDragOver={draggedTaskId ? (event) => { const bounds = event.currentTarget.getBoundingClientRect(); const edge = 64; const distanceLeft = event.clientX - bounds.left; const distanceRight = bounds.right - event.clientX; if (distanceLeft >= 0 && distanceLeft < edge) event.currentTarget.scrollLeft -= Math.ceil((edge - distanceLeft) / 3); else if (distanceRight >= 0 && distanceRight < edge) event.currentTarget.scrollLeft += Math.ceil((edge - distanceRight) / 3); } : undefined} onDragLeave={draggedTaskId ? (event) => { const bounds = event.currentTarget.getBoundingClientRect(); if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) setDragOverStage(""); } : undefined}>
         <div className={`development-flow-board${draggedTaskId ? " is-dragging" : ""}`}>{developmentStages.map(([key, label, color]) => {

@@ -3,13 +3,23 @@ import { createPortal } from "react-dom";
 import { cx, stageLabels } from "./core";
 import { CrmIcon } from "./icons";
 
-export function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: ReactNode }) { return <div className="page-heading"><p className="eyebrow">{eyebrow}</p><div className="page-heading-row"><div><h1>{title}</h1><p>{description}</p></div>{action}</div></div>; }
+export function PageHeader({ eyebrow, title, description, action, avatar }: { eyebrow: string; title: string; description: string; action?: ReactNode; avatar?: ReactNode }) { return <div className="page-heading"><p className="eyebrow">{eyebrow}</p><div className="page-heading-row"><div>{avatar ? <div className="page-heading-identity">{avatar}<div><h1>{title}</h1><p>{description}</p></div></div> : <><h1>{title}</h1><p>{description}</p></>}</div>{action}</div></div>; }
 export function Loading({ label = "Loading records…" }: { label?: string }) { return <div className="empty-state" role="status">{label}</div>; }
 export function ErrorBox({ children = "We couldn’t load this information. Refresh to try again." }: { children?: ReactNode }) { return <p className="form-notice form-notice-error" role="alert">{children}</p>; }
 export function Metric({ label, value, hint, tone = "orange", icon = "↗" }: { label: string; value: number | string; hint: string; tone?: string; icon?: string }) { const iconName = ({ "↗": "trend", "♙": "users", "▤": "tasks", "▦": "calendar", "▱": "layers", "✓": "check", "$": "money" } as Record<string, string>)[icon] ?? icon; return <div className={`dashboard-metric metric-${tone}`}><span className="dashboard-metric-icon"><CrmIcon name={iconName}/></span><span><span className="dashboard-metric-label">{label}</span><strong>{value}</strong><small>{hint}</small></span></div>; }
 
 
 export function Modal({ title, description, onClose, children, className }: { title: string; description: string; onClose: () => void; children: ReactNode; className?: string }) { const ref=useRef<HTMLDialogElement>(null); useEffect(()=>{const dialog=ref.current;if(dialog&&!dialog.open)dialog.showModal();},[]); return createPortal(<dialog ref={ref} className={cx("record-dialog",className)} onCancel={(event)=>{event.preventDefault();onClose();}} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}><header className="add-client-dialog-header"><div><p className="eyebrow">StrataForge workspace</p><h2>{title}</h2><p>{description}</p></div><button type="button" className="add-client-dialog-close" onClick={onClose} aria-label="Close">×</button></header>{children}</dialog>,document.body); }
+
+export function DeleteRecordModal({ recordType, recordName, busy, error, onClose, onConfirm }: { recordType: "lead" | "client" | "project"; recordName: string; busy: boolean; error: string; onClose: () => void; onConfirm: () => void }) {
+  return <Modal title={`Delete ${recordType}?`} description={`Remove ${recordName} from your active ${recordType} records.`} onClose={onClose} className="delete-record-dialog">
+    <div className="delete-record-content">
+      <div className="delete-record-notice"><span aria-hidden="true">!</span><p>This record will be archived. Its related project, payment, proposal, task, and audit history will be kept.</p></div>
+      {error&&<ErrorBox>{error}</ErrorBox>}
+      <div className="form-actions"><button type="button" className="button button-secondary" disabled={busy} onClick={onClose}>Cancel</button><button type="button" className="button button-danger" disabled={busy} onClick={onConfirm}>{busy?"Deleting…":`Delete ${recordType}`}</button></div>
+    </div>
+  </Modal>;
+}
 
 export function DatePicker({ name, defaultValue = "", label }: { name: string; defaultValue?: string; label: string }) {
   const id = useId();
@@ -138,7 +148,7 @@ export function DatePicker({ name, defaultValue = "", label }: { name: string; d
 }
 
 
-export function StageDropdown({ value, options, disabled, label, optionLabels, onChange, className, minMenuWidth = 180 }: { value: string; options: string[]; disabled: boolean; label: string; optionLabels?: Record<string, string>; onChange: (stage: string) => void; className?: string; minMenuWidth?: number }) {
+export function StageDropdown({ value, options, disabled, label, optionLabels, optionIcon, onChange, className, minMenuWidth = 180 }: { value: string; options: string[]; disabled: boolean; label: string; optionLabels?: Record<string, string>; optionIcon?: (option: string) => ReactNode; onChange: (stage: string) => void; className?: string; minMenuWidth?: number }) {
   const id = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -248,12 +258,12 @@ export function StageDropdown({ value, options, disabled, label, optionLabels, o
 
   return <div className={cx("stage-dropdown", className)} ref={rootRef}>
     <button ref={triggerRef} type="button" className="stage-dropdown-trigger" aria-label={label} aria-haspopup="listbox" aria-expanded={open} aria-controls={id} disabled={disabled} onKeyDown={handleTriggerKey} onClick={() => open ? setOpen(false) : openAt(selectedIndex)}>
-      <span>{optionLabel(value)}</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7.5 5 5 5-5"/></svg>
+      <span className="stage-dropdown-value">{optionIcon?.(value)}<span>{optionLabel(value)}</span></span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7.5 5 5 5-5"/></svg>
     </button>
     {open && createPortal(<div ref={menuRef} id={id} className="stage-dropdown-menu" role="listbox" aria-label={label} style={{ top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight }}>
       {options.map((option, index) => <button key={option} ref={(element) => { optionRefs.current[index] = element; }} type="button" role="option" aria-selected={option === value} tabIndex={index === activeIndex ? 0 : -1} className={cx("stage-dropdown-option", option === value && "is-selected", index === activeIndex && "is-active")} onFocus={() => setActiveIndex(index)} onKeyDown={(event) => handleOptionKey(event, index)} onClick={() => choose(option)}>
-        <span>{optionLabel(option)}</span>{option === value && <CrmIcon name="check"/>}
+        <span className="stage-dropdown-option-label">{optionIcon?.(option)}<span>{optionLabel(option)}</span></span>{option === value && <CrmIcon name="check"/>}
       </button>)}
-    </div>, document.body)}
+    </div>, triggerRef.current?.closest("dialog") ?? document.body)}
   </div>;
 }

@@ -3,7 +3,6 @@ import { AuthProvider, ToastProvider, Gate, Shell, useAuth } from "./crm/shared"
 import { Dashboard } from "./crm/dashboard";
 import { Leads, LeadWorkflow } from "./crm/leads";
 import { TasksDeals } from "./crm/tasks-deals";
-import { Pipeline } from "./crm/pipeline";
 import { Clients, ClientDetail } from "./crm/clients";
 import { Projects } from "./crm/projects";
 import { Settings, Security, MfaPage, AuthPage, Setup, AccessPending, AuthCallback } from "./crm/account";
@@ -11,6 +10,7 @@ import ProjectDetail from "@/ProjectDetail";
 import TeamProjectTasks from "@/TeamProjectTasks";
 import CalendarPage from "@/Calendar";
 import ReportsPage from "@/Reports";
+import { WorkspaceAccess, WorkspaceAuditHistory } from "./crm/access";
 
 function Calendar() {
   const { founder } = useAuth();
@@ -52,7 +52,7 @@ function App() {
               <Route path="/team/tasks" element={<TeamProjectTasks />} />
               <Route path="/tasks-deals" element={<TasksDeals />} />
               <Route path="/tasks" element={<TasksDeals />} />
-              <Route path="/pipeline" element={<Pipeline />} />
+              <Route path="/pipeline" element={<Navigate to="/leads" replace />} />
               <Route path="/clients" element={<Clients />} />
               <Route path="/clients/new" element={<Clients />} />
               <Route path="/clients/:id" element={<ClientDetail />} />
@@ -61,6 +61,8 @@ function App() {
               <Route path="/calendar" element={<Calendar />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/access" element={<WorkspaceAccess />} />
+              <Route path="/audit-history" element={<WorkspaceAuditHistory />} />
               <Route path="/account" element={<Security />} />
             </Route>
           </Route>

@@ -129,7 +129,23 @@ export function TasksDeals() {
             </article>;
           }) : <p className={cx("td-lane-empty", canDrop && "is-drop-hint")}>{canDrop ? "Drop a deal here" : "No deals in this stage"}</p>}</div>
         </section>;
-      })}</div> : !tasks ? <Loading/> : tasks.length === 0 ? <div className="task-empty-state"><span className="task-empty-icon" aria-hidden="true">✓</span><div><strong>Nothing on your task list yet</strong><p>Add a task to keep the next step for each opportunity visible.</p></div><button type="button" className="button button-secondary" onClick={() => setTaskOpen(true)}>Add a task</button></div> : <section className="task-list">{tasks.map((task) => <article className={cx("task-card", task.status === "completed" && "is-completed")} key={task.id}><label className="task-complete-control"><input type="checkbox" checked={task.status === "completed"} disabled={busy === task.id} onChange={() => void toggleTask(task)}/><span className="task-checkbox-mark" aria-hidden="true"/><span className="visually-hidden">{task.status === "completed" ? `Reopen ${task.title}` : `Complete ${task.title}`}</span></label><div className="task-card-content"><div className="task-card-topline"><strong>{task.title}</strong><div className="task-card-tools"><span className={cx("task-status-pill", `task-status-${task.status}`)}>{task.status.replace(/_/g, " ")}</span><details className="task-card-actions"><summary aria-label={`Actions for ${task.title}`}><span aria-hidden="true">⋮</span></summary><div className="task-card-actions-menu"><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setTaskToEdit(task); }}>Edit task</button></div></details></div></div>{task.description && <p>{task.description}</p>}<div className="task-card-meta"><span>{task.due_at ? "Due" : "No due date"}</span>{task.due_at && <time dateTime={task.due_at}>{dateText(task.due_at)}</time>}</div></div></article>)}</section>}
+      })}</div> : !tasks ? <Loading/> : tasks.length === 0 ? <div className="task-empty-state"><span className="task-empty-icon" aria-hidden="true">✓</span><div><strong>Nothing on your task list yet</strong><p>Add a task to keep the next step for each opportunity visible.</p></div><button type="button" className="button button-secondary" onClick={() => setTaskOpen(true)}>Add a task</button></div> : <section className="task-list">{tasks.map((task) => {
+        const linkedLead = task.lead_id ? leads?.find((lead) => lead.id === task.lead_id) : null;
+        const relatedLabel = linkedLead ? `Lead · ${linkedLead.company_name}` : task.client_id ? "Client follow-up" : "General task";
+        return <article className={cx("task-card", task.status === "completed" && "is-completed")} key={task.id}>
+          <div className="task-card-content">
+            <div className="task-card-topline">
+              <div className="task-card-heading"><span className="task-card-context">{relatedLabel}</span><strong>{task.title}</strong></div>
+              <div className="task-card-tools">
+                <span className={cx("task-status-pill", `task-status-${task.status}`)}>{task.status.replace(/_/g, " ")}</span>
+                <details className="task-card-actions"><summary aria-label={`Actions for ${task.title}`}><span aria-hidden="true">⋮</span></summary><div className="task-card-actions-menu"><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setTaskToEdit(task); }}>Edit task</button></div></details>
+              </div>
+            </div>
+            {task.description && <p>{task.description}</p>}
+            <div className="task-card-meta"><span className="task-card-date"><CrmIcon name="calendar"/>{task.due_at ? <><span>Due</span><time dateTime={task.due_at}>{dateText(task.due_at)}</time></> : <span>No due date</span>}</span><label className="task-complete-control"><input type="checkbox" checked={task.status === "completed"} disabled={busy === task.id} onChange={() => void toggleTask(task)}/><span className="task-checkbox-mark" aria-hidden="true"/><span>{task.status === "completed" ? "Completed" : "Mark done"}</span></label></div>
+          </div>
+        </article>;
+      })}</section>}
     </section>
     {taskOpen && <TaskModal onClose={() => setTaskOpen(false)} onSaved={() => void load()}/>}
     {leadOpen && <Modal title="Add a website inquiry" description="Capture the request and primary contact. New inquiries start in New Leads." onClose={() => setLeadOpen(false)} className="lead-record-dialog"><LeadForm onClose={() => setLeadOpen(false)} onSaved={() => void load()}/></Modal>}
