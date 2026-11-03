@@ -74,7 +74,7 @@ export function Projects(){
     if(clientIds.length){const clientsResult=await db().from("clients").select("id,name").eq("workspace_id",founder!.workspaceId).in("id",clientIds);setClients(Object.fromEntries((clientsResult.data??[]).map((client:any)=>[client.id,client.name])));}
     else setClients({});
   },[founder]);
-  useEffect(()=>{void load();},[load]);
+  useEffect(()=>{void load();const refreshFromAssistant=()=>void load();window.addEventListener("strataforge:crm-data-changed",refreshFromAssistant);return()=>window.removeEventListener("strataforge:crm-data-changed",refreshFromAssistant);},[load]);
   useEffect(()=>{
     if(!selectedId||!founder)return;
     let active=true;

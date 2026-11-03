@@ -119,7 +119,7 @@ export function Clients(){
     const optionalErrors=[contactResult.error,leadResult.error,projectResult.error].filter(Boolean);
     setRelatedError(optionalErrors.length?"Some contact or project details could not be loaded. Retry to refresh the directory.":"");
   },[founder]);
-  useEffect(()=>{void load();},[load]);
+  useEffect(()=>{void load();const refreshFromAssistant=()=>void load();window.addEventListener("strataforge:crm-data-changed",refreshFromAssistant);return()=>window.removeEventListener("strataforge:crm-data-changed",refreshFromAssistant);},[load]);
   const allRows=rows??[];
   const enriched=allRows.map(client=>{
     const {clientProjects,clientContacts,primaryContact,linkedLeadIds}=resolveLinkedLeadContact(client,contacts,linkedLeads,projects);

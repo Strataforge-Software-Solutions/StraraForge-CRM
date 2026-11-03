@@ -7,9 +7,14 @@
     "build": "vite build",
     "start": "vite preview --host 0.0.0.0 --port 3000 --strictPort",
     "typecheck": "tsc --noEmit",
-    "check": "tsc --noEmit && vite build"
+    "check": "tsc --noEmit && tsc -p server/tsconfig.json --noEmit && vite build",
+    "dev:api": "node --env-file=.env.local --import tsx server/index.ts",
+    "build:api": "tsc -p server/tsconfig.json",
+    "start:api": "node server/dist/index.js",
+    "test:api": "node --import tsx --test server/actions.test.ts"
   },
   "dependencies": {
+    "@langchain/langgraph": "^1.6.0",
     "@supabase/supabase-js": "2.118.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -20,6 +25,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3",
     "vite": "^8.3.5"
   },

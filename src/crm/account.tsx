@@ -219,6 +219,7 @@ export function MfaPage() {
   const [error, setError] = useState("");
   const [codeRejected, setCodeRejected] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [backBusy, setBackBusy] = useState(false);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
@@ -271,9 +272,18 @@ export function MfaPage() {
     navigate("/dashboard", { replace: true });
   }
 
+  async function backToSignIn() {
+    if (busy || backBusy) return;
+    setBackBusy(true);setError("");
+    const {error:signOutError}=await db().auth.signOut({scope:"local"});
+    if(signOutError){setError("Could not return to sign in. Please try again.");setBackBusy(false);return;}
+    navigate("/sign-in",{replace:true});
+  }
+
   return <div className="auth-shell auth-shell-login auth-shell-verify">
     <AuthBrandPanel/><div className="auth-panel auth-login-panel auth-verify-panel">
       <div className="auth-card auth-card-login auth-verify-card mfa-card">
+        <button type="button" className="auth-verify-back" onClick={()=>void backToSignIn()} disabled={busy||backBusy}>{backBusy?"Returning…":"← Back to sign in"}</button>
         <div className="auth-verify-brand"><img src="/strataforge-mark.png" alt=""/><span><strong>STRATA<span>FORGE</span></strong><small>CRM · ACCOUNT SECURITY</small></span></div>
 
         <p className="eyebrow">Account protection</p>
@@ -460,15 +470,17 @@ export function AuthPage({ mode }: { mode: "sign-in" | "forgot" | "set-password"
   }
 
   const signInMode = mode === "sign-in";
-  return <div className={cx("auth-shell", signInMode && "auth-shell-login", mode === "verify" && "auth-shell-verify")}>
-    <AuthBrandPanel/>
-    <div className={cx("auth-panel", signInMode && "auth-login-panel")}>
-      {!signInMode && mode !== "verify" && <Link to="/sign-in" className="brand-link"><img width="70" src="/strataforge-mark.png" alt="StrataForge"/></Link>}
-      <div className={cx("auth-card", signInMode && "auth-card-login")}>
+  const recoveryMode = mode === "forgot" || mode === "set-password";
+  const brandedAuthMode = signInMode || recoveryMode;
+  return <div className={cx("auth-shell", brandedAuthMode && "auth-shell-login", mode === "verify" && "auth-shell-verify", recoveryMode && "auth-shell-recovery")}>
+    {brandedAuthMode&&<AuthBrandPanel/>}
+    <div className={cx("auth-panel", brandedAuthMode && "auth-login-panel", recoveryMode && "auth-recovery-panel")}>
+      <div className={cx("auth-card", brandedAuthMode && "auth-card-login", recoveryMode && "auth-card-recovery")}>
+        {recoveryMode&&<Link to="/sign-in" className="auth-recovery-brand"><img src="/strataforge-mark.png" alt=""/><span><strong>STRATA<span>FORGE</span></strong><small>CRM · ACCOUNT RECOVERY</small></span></Link>}
         {signInMode && <div className="auth-login-brand"><img src="/strataforge-mark.png" alt=""/><strong>STRATA<span>FORGE</span></strong><small>CRM</small></div>}{mode === "verify" && <div className="auth-verify-brand"><img src="/strataforge-mark.png" alt=""/><span><strong>STRATA<span>FORGE</span></strong><small>CRM · ACCOUNT SECURITY</small></span></div>}
         <p className="eyebrow">{signInMode ? "Founder access" : mode === "forgot" ? "Account recovery" : mode === "set-password" ? "Secure your account" : "Account protection"}</p>
         <h1>{signInMode ? "Welcome back" : mode === "forgot" ? "Reset your password" : mode === "set-password" ? "Choose a new password" : "Verify your identity"}</h1>
-        <p className={cx(signInMode && "auth-login-intro", mode === "verify" && "auth-verify-intro")}>{signInMode ? "Log in to your StrataForge CRM account to continue." : mode === "forgot" ? "We’ll email a password recovery link." : mode === "set-password" ? "Set a new password for your account." : "Enter the six-digit code from your authenticator app to finish signing in."}</p>
+        <p className={cx(brandedAuthMode && "auth-login-intro", mode === "verify" && "auth-verify-intro")}>{signInMode ? "Log in to your StrataForge CRM account to continue." : mode === "forgot" ? "We’ll email a password recovery link." : mode === "set-password" ? "Set a new password for your account." : "Enter the six-digit code from your authenticator app to finish signing in."}</p>
         <form className="auth-form" onSubmit={submit}>
           {(signInMode || mode === "forgot") && <>
             <label htmlFor="email">Email address</label>
@@ -495,7 +507,7 @@ export function AuthPage({ mode }: { mode: "sign-in" | "forgot" | "set-password"
           <button className="button auth-provider-button button-full" type="button" disabled={busy} onClick={() => void signInWithGoogle()}><svg className="google-mark" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.89c-.58 2.96-2.26 5.47-4.76 7.16l7.73 6C44.37 37.98 46.98 31.96 46.98 24.55Z"/><path fill="#FBBC05" d="M10.54 28.59a14.4 14.4 0 0 1 0-9.18l-7.98-6.19a23.9 23.9 0 0 0 0 21.56l7.98-6.19Z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.9-5.82l-7.73-6c-2.14 1.44-4.88 2.3-8.17 2.3-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48Z"/></svg>Continue with Google</button>
           <p className="auth-login-footer">Don’t have an account? <span>Contact your administrator.</span></p>
         </>}
-        {!signInMode && mode !== "verify" && <p><Link to="/sign-in">Return to sign in</Link></p>}
+        {!signInMode && mode !== "verify" && <p className={recoveryMode?"auth-recovery-return":""}><Link to="/sign-in">← Return to sign in</Link></p>}
       </div>
     </div>
   </div>;
@@ -506,9 +518,23 @@ export function AccessPending(){
   const navigate=useNavigate();
   const {reload,founder}=useAuth();
   const [signingOut,setSigningOut]=useState(false);
+  const [refreshing,setRefreshing]=useState(false);
   const [error,setError]=useState("");
+  async function refreshAccess(){
+    if(refreshing||signingOut)return;
+    setRefreshing(true);
+    setError("");
+    try{
+      await reload();
+      navigate("/dashboard",{replace:true});
+    }catch{
+      setError("Could not check workspace access. Please try again.");
+    }finally{
+      setRefreshing(false);
+    }
+  }
   async function signOut(){
-    if(signingOut)return;
+    if(signingOut||refreshing)return;
     setSigningOut(true);
     setError("");
     try{
@@ -522,7 +548,7 @@ export function AccessPending(){
       setSigningOut(false);
     }
   }
-  return <div className="auth-shell"><div className="auth-card"><h1>Workspace access pending</h1><p>Your account is not an active member of this workspace. Ask an administrator to grant access to this exact account:</p><p className="pending-account-email"><strong>{founder?.email || "Signed-in account unavailable"}</strong></p>{error&&<p className="form-error" role="alert">{error}</p>}<button type="button" className="button button-secondary" disabled={signingOut} onClick={()=>void signOut()}>{signingOut?"Signing out…":"Sign out"}</button></div></div>;
+  return <div className="auth-shell"><div className="auth-card"><h1>Workspace access pending</h1><p>Your account is not an active member of this workspace. Ask an administrator to grant access to this exact account:</p><p className="pending-account-email"><strong>{founder?.email || "Signed-in account unavailable"}</strong></p>{error&&<p className="form-error" role="alert">{error}</p>}<div className="pending-access-actions"><button type="button" className="button button-primary" disabled={signingOut||refreshing} onClick={()=>void refreshAccess()}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 7a6.5 6.5 0 0 0-11-2L3 7m0 0V3m0 4h4M4 13a6.5 6.5 0 0 0 11 2l2-2m0 0v4m0-4h-4"/></svg>{refreshing?"Checking access…":"Refresh access"}</button><button type="button" className="button button-secondary" disabled={signingOut||refreshing} onClick={()=>void signOut()}>{signingOut?"Signing out…":"Sign out"}</button></div></div></div>;
 }
 
 export function AuthCallback(){

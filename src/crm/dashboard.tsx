@@ -52,7 +52,8 @@ export function Dashboard() {
   useEffect(() => {
     const refreshWhenFocused = () => setRefreshVersion((version) => version + 1);
     window.addEventListener("focus", refreshWhenFocused);
-    return () => window.removeEventListener("focus", refreshWhenFocused);
+    window.addEventListener("strataforge:crm-data-changed", refreshWhenFocused);
+    return () => { window.removeEventListener("focus", refreshWhenFocused); window.removeEventListener("strataforge:crm-data-changed", refreshWhenFocused); };
   }, []);
 
   useEffect(() => {

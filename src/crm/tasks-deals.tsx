@@ -44,7 +44,7 @@ export function TasksDeals() {
     setTasks(taskResult.data ?? []);
     setProjects(projectResult.data ?? []);
   }, [founder]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); const refreshFromAssistant = () => void load(); window.addEventListener("strataforge:crm-data-changed", refreshFromAssistant); return () => window.removeEventListener("strataforge:crm-data-changed", refreshFromAssistant); }, [load]);
 
   async function move(lead: any, stage: string) {
     if (!movableStages.includes(stage) || stage === lead.stage || busy) return;
