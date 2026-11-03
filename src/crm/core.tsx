@@ -42,6 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const reloadIdRef = useRef(0);
   const reload = useCallback(async () => {
     const requestId = ++reloadIdRef.current;
+    setReady(false);
     if (!getSupabaseConfig()) {
       if (avatarRef.current) URL.revokeObjectURL(avatarRef.current.url);
       avatarRef.current = null;
@@ -50,7 +51,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     const supabase = db();
-    const [{ data: userResult }, assurance] = await Promise.all([supabase.auth.getUser(), supabase.auth.mfa.getAuthenticatorAssuranceLevel()]);
+    let userResult: Awaited<ReturnType<typeof supabase.auth.getUser>>["data"];
+    let assurance: Awaited<ReturnType<typeof supabase.auth.mfa.getAuthenticatorAssuranceLevel>>;
+    try {
+      [{ data: userResult }, assurance] = await Promise.all([supabase.auth.getUser(), supabase.auth.mfa.getAuthenticatorAssuranceLevel()]);
+    } catch {
+      if (requestId === reloadIdRef.current) setReady(true);
+      return;
+    }
     const user = userResult.user;
     if (requestId !== reloadIdRef.current) return;
     if (!user) {
@@ -60,11 +68,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setReady(true);
       return;
     }
-    const { data: membership } = await supabase.from("workspace_members").select("workspace_id, role").eq("user_id", user.id).eq("active", true).limit(1).maybeSingle();
+    let membership: { workspace_id: string; role: string } | null = null;
+    try {
+      const { data } = await supabase.from("workspace_members").select("workspace_id, role").eq("user_id", user.id).eq("active", true).limit(1).maybeSingle();
+      membership = data;
+    } catch {
+      if (requestId === reloadIdRef.current) setReady(true);
+      return;
+    }
     let workspaceName = "StrataForge";
     if (membership?.workspace_id && assurance.data?.currentLevel === "aal2") {
-      const { data: workspace } = await supabase.from("workspaces").select("name").eq("id", membership.workspace_id).maybeSingle();
-      workspaceName = workspace?.name ?? workspaceName;
+      try {
+        const { data: workspace } = await supabase.from("workspaces").select("name").eq("id", membership.workspace_id).maybeSingle();
+        workspaceName = workspace?.name ?? workspaceName;
+      } catch {
+        if (requestId === reloadIdRef.current) setReady(true);
+        return;
+      }
     }
     const storedPath = user.user_metadata?.avatar_path;
     const avatarPath = typeof storedPath === "string" && storedPath.startsWith(`${user.id}/`) ? storedPath : null;

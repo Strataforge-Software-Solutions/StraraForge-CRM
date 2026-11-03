@@ -431,12 +431,13 @@ function AuthBrandPanel() {
 export function AuthPage({ mode }: { mode: "sign-in" | "forgot" | "set-password" | "verify" }) {
  const {founder,reload}=useAuth();const navigate=useNavigate();const notify=useToast();const [searchParams]=useSearchParams();const linkError=searchParams.get("error")==="link";const [email,setEmail]=useState("");const [password,setPassword]=useState("");const [passwordVisible,setPasswordVisible]=useState(false);const [code,setCode]=useState("");const [factorId,setFactorId]=useState("");const [factorLoading,setFactorLoading]=useState(false);const [error,setError]=useState(()=>linkError?"This recovery link has expired or was already used. Request a new one.":"");const [success,setSuccess]=useState("");const [busy,setBusy]=useState(false);const [qr,setQr]=useState("");
   useEffect(()=>{setError(linkError?"This recovery link has expired or was already used. Request a new one.":"");setSuccess("");setPassword("");},[mode,linkError]);
+  useEffect(()=>{if(mode==="sign-in"&&founder)navigate("/verify",{replace:true});},[mode,founder,navigate]);
  useEffect(()=>{if((mode==="verify"&&founder?.aal==="aal1")||(mode==="set-password"&&founder?.aal!=="aal2")){let active=true;setFactorLoading(true);void db().auth.mfa.listFactors().then(({data,error:e})=>{if(!active)return;const f=data?.totp?.find((x:any)=>x.status==="verified");if(f)setFactorId(f.id);else if(mode==="set-password")setError(e?"Your authenticator could not be checked. Refresh the recovery page and try again.":"No verified authenticator was found. Contact your workspace administrator to restore account access.");setFactorLoading(false);});return()=>{active=false;};}},[founder?.aal,mode]);
   async function submit(event:FormEvent<HTMLFormElement>){
     event.preventDefault();setBusy(true);setError("");setSuccess("");
     try{
       if(mode==="sign-in"){
-        const {error:e}=await db().auth.signInWithPassword({email:email.trim(),password});if(e)throw e;await reload();navigate("/verify");
+        const {error:e}=await db().auth.signInWithPassword({email:email.trim(),password});if(e)throw e;await reload();
       }else if(mode==="forgot"){
         const {error:e}=await db().auth.resetPasswordForEmail(email.trim(),{redirectTo:`${location.origin}/auth/callback?flow=recovery`});if(e)throw e;setSuccess("If this address has an account, a recovery email is on its way. Check your inbox and spam folder.");
       }else if(mode==="set-password"){
