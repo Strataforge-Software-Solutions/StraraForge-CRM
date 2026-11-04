@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { prepareAction, executeAction, matchesVoiceConfirmation } from "./actions.js";
 import { runAssistant } from "./graph.js";
 import { ApiError, authenticate, config, requireString, requireUuid, signAction, validSignature, type ActionRow, type Principal } from "./shared.js";
@@ -9,7 +10,10 @@ function limit(userId: string, operation: string, count: number) {
   const key = `${userId}:${operation}`;
   const now = Date.now();
   const recent = (rate.get(key) || []).filter((time) => time > now - 60 * 60 * 1000);
-  if (recent.length >= count) throw new ApiError(429, "Assistant usage limit reached. Try again later.");
+  if (recent.length >= count) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((recent[0] + 60 * 60 * 1000 - now) / 1000));
+    throw new ApiError(429, "Forgey has reached the hourly usage limit. Your request is still here; try again after the wait.", { code: "AI_USAGE_LIMIT", retryAfterSeconds });
+  }
   recent.push(now); rate.set(key, recent);
 }
 
@@ -60,14 +64,28 @@ async function transcribe(principal: Principal, req: IncomingMessage) {
   const recording = await bytes(req, 10 * 1024 * 1024);
   if (recording.length < 1000) throw new ApiError(400, "No speech was recorded. Try again or type your request.");
   const form = new FormData();
-  form.append("model", "whisper-large-v3-turbo");
+  form.append("model", "whisper-large-v3");
   form.append("response_format", "json");
-  form.append("prompt", "StrataForge CRM. Leads, clients, tasks, projects, proposals, and payments. English, Filipino, or Taglish speech.");
+  const encodedContext = req.headers["x-transcription-context"];
+  let previousContext = "";
+  if (typeof encodedContext === "string" && encodedContext.length <= 4000) {
+    try { previousContext = decodeURIComponent(encodedContext).slice(-240); } catch { /* Ignore invalid continuation context. */ }
+  }
+  const prompt = [
+    "StrataForge CRM: leads, clients, tasks, projects, proposals, payments, follow-ups.",
+    "Transcribe the words as spoken in English, Filipino, or Taglish. Preserve the original language.",
+    previousContext ? `Previous transcript for continuity: ${previousContext}` : ""
+  ].filter(Boolean).join(" ");
+  form.append("prompt", prompt);
+  form.append("temperature", "0");
   form.append("file", new Blob([new Uint8Array(recording)], { type: mime }), `request.${suffix}`);
   const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
     method: "POST", headers: { Authorization: `Bearer ${config().groqKey}` }, body: form, signal: AbortSignal.timeout(30000)
   }).catch(() => { throw new ApiError(503, "Transcription is unavailable. Try again or type your request."); });
-  if (response.status === 429) throw new ApiError(429, "The free transcription limit was reached. Type your request or try later.");
+  if (response.status === 429) {
+    const retryAfterSeconds = Math.max(1, Math.min(3600, Number(response.headers.get("retry-after")) || 60));
+    throw new ApiError(429, "Voice transcription is rate-limited. Your draft is still here; try again after the wait or continue typing.", { code: "TRANSCRIPTION_RATE_LIMITED", retryAfterSeconds });
+  }
   if (!response.ok) throw new ApiError(503, "Speech could not be transcribed. Try again or type your request.");
   const result = await response.json() as { text?: string };
   return { transcript: String(result.text || "").trim().slice(0, 4000) };
@@ -118,6 +136,15 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       const { error } = await principal.db.from("ai_conversations").delete().eq("id", conversationId).eq("workspace_id", principal.workspaceId).eq("user_id", principal.userId);
       if (error) throw new ApiError(503, "Conversation could not be deleted.");
       json(res, 200, { deleted: true }); return;
+    }
+    if (req.method === "PATCH" && segments.length === 4) {
+      const input = await body(req);
+      const title = requireString(input.title, "conversation title", 100);
+      const { data, error } = await principal.db.from("ai_conversations").update({ title, updated_at: new Date().toISOString() })
+        .eq("id", conversationId).eq("workspace_id", principal.workspaceId).eq("user_id", principal.userId)
+        .select("id,title,created_at,updated_at").maybeSingle();
+      if (error || !data) throw new ApiError(404, "Conversation could not be renamed.");
+      json(res, 200, { conversation: data }); return;
     }
     if (req.method === "POST" && segments[4] === "messages" && segments.length === 5) {
       limit(principal.userId, "chat", 40);
@@ -201,10 +228,12 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 }
 
 const server = createServer((req, res) => {
+  const requestId = randomUUID();
+  res.setHeader("X-Request-ID", requestId);
   void handle(req, res).catch((error) => {
-    const status = error instanceof ApiError ? error.status : 500;
-    if (status >= 429) console.warn("Assistant API error:", status, error instanceof Error ? error.message : "Unknown error");
-    json(res, status, { error: status === 500 ? "Assistant request failed." : error.message });
+    const failure = error instanceof ApiError ? error : new ApiError(500, "Forgey hit an unexpected error. Your request is still here; retry in a moment.", { code: "INTERNAL_ERROR", retryable: true });
+    if (failure.status >= 429) console.warn("Assistant API error:", failure.status, failure.code, requestId);
+    json(res, failure.status, { error: failure.message, code: failure.code, retryable: failure.retryable, retryAfterSeconds: failure.retryAfterSeconds, requestId });
   });
 });
 

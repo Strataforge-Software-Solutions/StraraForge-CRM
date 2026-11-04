@@ -20,7 +20,15 @@ export function config() {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly retryAfterSeconds: number | null;
+  constructor(public status: number, message: string, options: { code?: string; retryable?: boolean; retryAfterSeconds?: number | null } = {}) {
+    super(message);
+    this.code = options.code || (status === 429 ? "AI_RATE_LIMITED" : status >= 500 ? "AI_SERVICE_UNAVAILABLE" : status === 401 ? "AUTH_REQUIRED" : status === 403 ? "ACCESS_DENIED" : "AI_REQUEST_FAILED");
+    this.retryable = options.retryable ?? (status === 429 || status >= 500);
+    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
+  }
 }
 
 export async function authenticate(authorization: string | undefined): Promise<Principal> {

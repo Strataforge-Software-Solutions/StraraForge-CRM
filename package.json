@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "vite --host 0.0.0.0 --port 3000 --strictPort",
+    "dev": "node scripts/dev.mjs",
     "build": "vite build",
     "start": "vite preview --host 0.0.0.0 --port 3000 --strictPort",
     "typecheck": "tsc --noEmit",
     "check": "tsc --noEmit && tsc -p server/tsconfig.json --noEmit && vite build",
-    "dev:api": "node --env-file=.env.local --import tsx server/index.ts",
+    "dev:api": "node --watch --env-file=.env.local --import tsx server/index.ts",
     "build:api": "tsc -p server/tsconfig.json",
     "start:api": "node server/dist/index.js",
     "test:api": "node --import tsx --test server/actions.test.ts"

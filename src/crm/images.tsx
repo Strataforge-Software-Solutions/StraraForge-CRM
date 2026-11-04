@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { db, CrmIcon, useAuth } from "./shared";
+import { db, CrmIcon, LoadingInline, useAuth } from "./shared";
 
 export type RecordImageType = "lead" | "client" | "project" | "task";
 
@@ -197,6 +197,6 @@ export function RecordImages({ recordType, recordId, title = "Images", pendingFi
     <ImagePicker files={pending} onChange={setPending} disabled={busy || disabled}/>
     {!saveWithForm && pending.length > 0 && <button type="button" className="button button-primary crm-image-upload" disabled={busy || disabled} onClick={() => void upload()}>{busy ? "Uploading…" : `Upload ${pending.length} ${pending.length === 1 ? "image" : "images"}`}</button>}
     {error && <div className="crm-image-error" role="alert">{error} <button type="button" onClick={() => setVersion((value) => value + 1)}>Refresh images</button></div>}
-    {loading ? <p className="crm-image-muted" role="status">Loading images…</p> : images.length ? <div className="crm-image-grid">{images.map((image) => <div className="crm-image-tile" key={image.path}><a href={image.url} target="_blank" rel="noreferrer" aria-label={`Open ${image.displayName} in new tab`}><img src={image.url} alt={image.displayName} loading="lazy"/></a><div><span title={image.displayName}>{image.displayName}</span>{confirming === image.path ? <span className="crm-image-confirm"><button type="button" disabled={busy || disabled} onClick={() => void remove(image)}>Remove?</button><button type="button" disabled={busy || disabled} onClick={() => setConfirming("")}>Cancel</button></span> : <button type="button" disabled={busy || disabled} aria-label={`Remove ${image.displayName}`} onClick={() => setConfirming(image.path)}>Remove</button>}</div></div>)}</div> : <p className="crm-image-muted">No images added yet.</p>}
+    {loading ? <p className="crm-image-muted"><LoadingInline label="Loading images…"/></p> : images.length ? <div className="crm-image-grid">{images.map((image) => <div className="crm-image-tile" key={image.path}><a href={image.url} target="_blank" rel="noreferrer" aria-label={`Open ${image.displayName} in new tab`}><img src={image.url} alt={image.displayName} loading="lazy"/></a><div><span title={image.displayName}>{image.displayName}</span>{confirming === image.path ? <span className="crm-image-confirm"><button type="button" disabled={busy || disabled} onClick={() => void remove(image)}>Remove?</button><button type="button" disabled={busy || disabled} onClick={() => setConfirming("")}>Cancel</button></span> : <button type="button" disabled={busy || disabled} aria-label={`Remove ${image.displayName}`} onClick={() => setConfirming(image.path)}>Remove</button>}</div></div>)}</div> : <p className="crm-image-muted">No images added yet.</p>}
   </section>;
 }

@@ -437,7 +437,13 @@ export function AuthPage({ mode }: { mode: "sign-in" | "forgot" | "set-password"
     event.preventDefault();setBusy(true);setError("");setSuccess("");
     try{
       if(mode==="sign-in"){
-        const {error:e}=await db().auth.signInWithPassword({email:email.trim(),password});if(e)throw e;await reload();
+        let result=await db().auth.signInWithPassword({email:email.trim(),password});
+        if(result.error?.name==="AuthRetryableFetchError"){
+          await new Promise(resolve=>window.setTimeout(resolve,700));
+          result=await db().auth.signInWithPassword({email:email.trim(),password});
+        }
+        if(result.error?.name==="AuthRetryableFetchError")throw new Error("Could not connect to sign-in right now. Check your internet connection and try again.");
+        if(result.error)throw result.error;await reload();
       }else if(mode==="forgot"){
         const {error:e}=await db().auth.resetPasswordForEmail(email.trim(),{redirectTo:`${location.origin}/auth/callback?flow=recovery`});if(e)throw e;setSuccess("If this address has an account, a recovery email is on its way. Check your inbox and spam folder.");
       }else if(mode==="set-password"){

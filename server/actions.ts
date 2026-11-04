@@ -38,13 +38,31 @@ function emailValue(value: unknown, label: string): string {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) throw new ApiError(400, `Enter a valid ${label}.`);
   return text;
 }
-function changes(value: unknown, allowed: string[]): Record<string, unknown> {
+function changes(value: unknown, allowed: string[], aliases: Record<string, string> = {}): Record<string, unknown> {
   if (!value || Array.isArray(value) || typeof value !== "object") throw new ApiError(400, "Specify the fields to change.");
   const input = value as Record<string, unknown>;
-  const output = Object.fromEntries(Object.entries(input).filter(([key]) => allowed.includes(key)));
-  if (!Object.keys(output).length || Object.keys(output).length !== Object.keys(input).length) throw new ApiError(400, "The requested fields are not supported.");
+  const output: Record<string, unknown> = {};
+  const unsupported: string[] = [];
+  for (const [rawKey, fieldValue] of Object.entries(input)) {
+    const normalizedKey = rawKey.trim().replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().replace(/[\s-]+/g, "_");
+    const key = aliases[normalizedKey] || normalizedKey;
+    if (!allowed.includes(key)) { unsupported.push(rawKey); continue; }
+    if (Object.hasOwn(output, key)) throw new ApiError(400, `The field ${key.replaceAll("_", " ")} was provided more than once.`);
+    output[key] = fieldValue;
+  }
+  if (unsupported.length) throw new ApiError(400, `I can’t update ${unsupported.slice(0, 4).join(", ")}. Supported fields: ${allowed.join(", ")}.`);
+  if (!Object.keys(output).length) throw new ApiError(400, "Specify at least one supported field to change.");
   return output;
 }
+
+const leadFieldAliases: Record<string, string> = {
+  name: "company_name", company: "company_name", business_name: "company_name", lead_name: "company_name",
+  lead_source: "source", source_type: "source",
+  follow_up: "next_follow_up_at", followup: "next_follow_up_at", follow_up_date: "next_follow_up_at",
+  followup_date: "next_follow_up_at", next_follow_up_date: "next_follow_up_at",
+  brief: "website_brief", website_description: "website_brief", project_brief: "website_brief",
+  status: "stage", lead_stage: "stage", estimated_budget_min: "budget_min", estimated_budget_max: "budget_max"
+};
 
 async function record(principal: Principal, table: string, id: string): Promise<any> {
   const { data, error } = await principal.db.from(table).select("*").eq("workspace_id", principal.workspaceId).eq("id", id).maybeSingle();
@@ -75,8 +93,16 @@ export async function prepareAction(principal: Principal, kind: string, raw: Rec
       name = String(p.company_name);
       break;
     case "update_lead":
-      p.changes = changes(raw.changes, ["company_name", "contact_name", "email", "phone", "website_brief", "notes", "project_type", "timeline", "next_follow_up_at", "budget_min", "budget_max", "budget_currency", "stage"]);
+      p.changes = changes(raw.changes, ["company_name", "contact_name", "email", "phone", "website_brief", "notes", "project_type", "timeline", "next_follow_up_at", "budget_min", "budget_max", "budget_currency", "stage", "source"], leadFieldAliases);
       if ("email" in (p.changes as any)) (p.changes as any).email = emailValue((p.changes as any).email, "email");
+      if ("source" in (p.changes as any)) {
+        const source = String((p.changes as any).source ?? "").trim();
+        const standardSources = ["Website", "Social Media", "Inquiry Form", "Email", "Referral"];
+        const canonicalSource = standardSources.find((item) => item.toLowerCase() === source.toLowerCase());
+        const socialSource = source.match(/^social media\s*[:–—-]\s*(.{1,106})$/i)?.[1]?.trim();
+        if (source && !canonicalSource && !socialSource) throw new ApiError(400, "Choose Website, Social Media, Inquiry Form, Email, Referral, or Social Media with a platform name.");
+        (p.changes as any).source = source ? (canonicalSource || `Social Media: ${socialSource}`) : null;
+      }
       if ("next_follow_up_at" in (p.changes as any) && (p.changes as any).next_follow_up_at) (p.changes as any).next_follow_up_at = `${isoDate((p.changes as any).next_follow_up_at, "follow-up date")}T12:00:00.000Z`;
       for (const key of ["budget_min", "budget_max"]) if (key in (p.changes as any) && (p.changes as any)[key] != null) (p.changes as any)[key] = numberValue((p.changes as any)[key], key);
       if ("budget_currency" in (p.changes as any) && (p.changes as any).budget_currency) (p.changes as any).budget_currency = currency((p.changes as any).budget_currency);
@@ -201,7 +227,12 @@ export async function prepareAction(principal: Principal, kind: string, raw: Rec
       }
       break;
   }
-  const verb = kind.replaceAll("_", " ");
+  if (kind === "update_lead") {
+    const changes = p.changes as Record<string, unknown>;
+    p.previous_values = Object.fromEntries(Object.keys(changes).map((field) => [field, target?.[field] ?? null]));
+  }
+  const rawVerb = kind.replaceAll("_", " ");
+  const verb = rawVerb[0].toUpperCase() + rawVerb.slice(1);
   const detail = kind === "create_proposal_draft" ? ` · ${p.currency} ${p.amount}` :
     kind === "record_deposit" || kind === "record_progress_payment" ? ` · ${p.amount} received ${p.received_at}` :
     kind === "set_project_status" || kind === "set_task_status" ? ` → ${p.status}` : "";
@@ -217,6 +248,20 @@ async function checkedUpdate(principal: Principal, table: string, id: string, ex
   const { data, error } = await query.select("id").maybeSingle();
   if (error || !data) throw new ApiError(409, "The record changed or the update was rejected. Refresh and try again.");
   return id;
+}
+
+async function verifySavedRow(principal: Principal, table: string, id: string, expected: Record<string, unknown> = {}) {
+  const { data, error } = await principal.db.from(table).select("*")
+    .eq("workspace_id", principal.workspaceId).eq("id", id).maybeSingle();
+  if (error || !data) throw new ApiError(503, "The change was submitted, but Forgey could not verify the saved record. Check the CRM before retrying.", { code: "CRM_VERIFY_FAILED", retryable: false });
+  for (const [key, value] of Object.entries(expected)) {
+    const actual = data[key];
+    const matches = key.endsWith("_at") && value && actual
+      ? new Date(String(actual)).getTime() === new Date(String(value)).getTime()
+      : value == null ? actual == null : String(actual) === String(value);
+    if (!matches) throw new ApiError(503, "The CRM did not return the requested saved values. Check the record before retrying.", { code: "CRM_VERIFY_FAILED", retryable: false });
+  }
+  return data;
 }
 
 export async function executeAction(principal: Principal, action: ActionRow): Promise<{ message: string; href?: string; id?: string }> {
@@ -300,20 +345,78 @@ export async function executeAction(principal: Principal, action: ActionRow): Pr
     }
     case "save_payment_schedule":
       result = await db.rpc("save_project_payment_schedule", { p_project_id: p.project_id, p_milestones: p.milestones });
-      href = `/projects/${p.project_id}`; break;
+      id = result.data; href = `/projects/${p.project_id}`; break;
     case "grant_access":
       result = await db.rpc("admin_grant_workspace_access", { p_workspace_id: workspaceId, p_email: p.email, p_role: p.role });
       id = result.data; href = "/access"; break;
     case "set_member_role":
       result = await db.rpc("admin_set_workspace_member_role", { p_workspace_id: workspaceId, p_user_id: p.user_id, p_role: p.role });
-      href = "/access"; break;
+      id = String(p.user_id); href = "/access"; break;
     case "remove_access":
       result = await db.rpc("admin_remove_workspace_access", { p_workspace_id: workspaceId, p_user_id: p.user_id });
-      href = "/access"; break;
+      id = String(p.user_id); href = "/access"; break;
     default: throw new ApiError(400, "Unsupported action.");
   }
   if (result?.error || (result?.data === false && ["claim_project_task", "unassign_project_task", "set_project_task_status", "set_project_task_stage"].includes(action.kind)) || ("data" in (result || {}) && result.data == null && ["create_lead", "create_client", "create_task", "create_project_task", "create_proposal_draft", "delete_draft_proposal", "record_deposit", "record_progress_payment", "grant_access", "convert_lead"].includes(action.kind))) {
     throw new ApiError(409, result?.error?.message || "The CRM did not confirm this action.");
+  }
+  const expectedByKind: Record<string, { table: string; expected: Record<string, unknown> }> = {
+    create_lead: { table: "leads", expected: { company_name: p.company_name, email: p.email } },
+    update_lead: { table: "leads", expected: p.changes as Record<string, unknown> },
+    archive_lead: { table: "leads", expected: { archived_at: "present" } },
+    create_client: { table: "clients", expected: { name: p.name } },
+    update_client: { table: "clients", expected: p.changes as Record<string, unknown> },
+    archive_client: { table: "clients", expected: { archived_at: "present" } },
+    create_task: { table: "tasks", expected: { title: p.title } },
+    create_project_task: { table: "tasks", expected: { title: p.title } },
+    update_task: { table: "tasks", expected: p.changes as Record<string, unknown> },
+    set_task_status: { table: "tasks", expected: { status: p.status } },
+    claim_project_task: { table: "tasks", expected: { assignee_user_id: userId } },
+    unassign_project_task: { table: "tasks", expected: { assignee_user_id: null } },
+    set_project_task_status: { table: "tasks", expected: { status: p.status } },
+    set_project_task_stage: { table: "tasks", expected: { development_stage: p.stage } },
+    archive_task: { table: "tasks", expected: { archived_at: "present" } },
+    create_proposal_draft: { table: "proposals", expected: { lead_id: p.lead_id, amount: p.amount, status: "draft" } },
+    mark_proposal_sent: { table: "proposals", expected: { status: "sent" } },
+    accept_proposal: { table: "proposals", expected: { status: "accepted" } },
+    record_deposit: { table: "payment_entries", expected: { amount: p.amount, payment_kind: "deposit", reference: p.reference } },
+    convert_lead: { table: "projects", expected: { lead_id: p.lead_id } },
+    set_project_status: { table: "projects", expected: { status: p.status } },
+    archive_project: { table: "projects", expected: { archived_at: "present" } },
+    record_progress_payment: { table: "payment_entries", expected: { amount: p.amount, payment_kind: "progress", reference: p.reference } },
+    grant_access: { table: "workspace_members", expected: { role: p.role, active: true } },
+    set_member_role: { table: "workspace_members", expected: { role: p.role, active: true } }
+  };
+  const verification = expectedByKind[action.kind];
+  if (verification && id && !["grant_access", "set_member_role"].includes(action.kind)) {
+    const expected = { ...verification.expected };
+    const archiveCheck = expected.archived_at === "present";
+    if (archiveCheck) delete expected.archived_at;
+    const saved = await verifySavedRow(principal, verification.table, id, expected);
+    if (archiveCheck && !saved.archived_at) throw new ApiError(503, "The change was submitted, but Forgey could not verify that the record was archived. Check the CRM before retrying.", { code: "CRM_VERIFY_FAILED", retryable: false });
+  }
+  if (action.kind === "delete_draft_proposal") {
+    const { data: deleted, error: verifyError } = await db.from("proposals").select("id").eq("workspace_id", workspaceId).eq("id", String(p.proposal_id)).maybeSingle();
+    if (verifyError || deleted) throw new ApiError(503, "The delete was submitted, but Forgey could not verify the result. Check the CRM before retrying.", { code: "CRM_VERIFY_FAILED", retryable: false });
+  }
+  if (["mark_proposal_sent", "accept_proposal"].includes(action.kind)) {
+    const proposal = await verifySavedRow(principal, "proposals", String(p.proposal_id), { status: action.kind === "mark_proposal_sent" ? "sent" : "accepted" });
+    const expectedStage = action.kind === "mark_proposal_sent" ? "proposal_sent" : "accepted_awaiting_deposit";
+    await verifySavedRow(principal, "leads", String(proposal.lead_id), { stage: expectedStage });
+  }
+  if (action.kind === "save_payment_schedule" && id) {
+    const { data: schedule, error: scheduleError } = await db.from("project_payment_schedules").select("id,status,project_id").eq("workspace_id", workspaceId).eq("id", id).maybeSingle();
+    const { data: milestones, error: milestoneError } = await db.from("project_payment_milestones").select("id").eq("workspace_id", workspaceId).eq("schedule_id", id);
+    if (scheduleError || milestoneError || !schedule || schedule.status !== "active" || schedule.project_id !== p.project_id || milestones?.length !== (p.milestones as unknown[]).length) {
+      throw new ApiError(503, "The schedule was submitted, but Forgey could not verify its saved milestones. Check the project before retrying.", { code: "CRM_VERIFY_FAILED", retryable: false });
+    }
+  }
+  if (["grant_access", "set_member_role", "remove_access"].includes(action.kind)) {
+    const { data: members, error: memberError } = await db.rpc("admin_list_workspace_members", { p_workspace_id: workspaceId });
+    const member = (members || []).find((item: any) => item.user_id === id);
+    const verified = action.kind === "remove_access" ? !member?.active
+      : !!member?.active && member.role === p.role;
+    if (memberError || !verified) throw new ApiError(503, "The access change was submitted, but Forgey could not verify the current workspace role. Check Access before retrying.", { code: "CRM_VERIFY_FAILED", retryable: false });
   }
   await db.rpc("ai_log_executed_action", { p_workspace_id: workspaceId, p_action_id: action.id, p_kind: action.kind, p_subject_id: id ?? null });
   return { message: `${action.summary} completed.`, href, id };
