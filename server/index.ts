@@ -227,7 +227,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   throw new ApiError(404, "Not found.");
 }
 
-const server = createServer((req, res) => {
+export function apiHandler(req: IncomingMessage, res: ServerResponse): void {
   const requestId = randomUUID();
   res.setHeader("X-Request-ID", requestId);
   void handle(req, res).catch((error) => {
@@ -235,8 +235,11 @@ const server = createServer((req, res) => {
     if (failure.status >= 429) console.warn("Assistant API error:", failure.status, failure.code, requestId);
     json(res, failure.status, { error: failure.message, code: failure.code, retryable: failure.retryable, retryAfterSeconds: failure.retryAfterSeconds, requestId });
   });
-});
+}
 
-const port = Number(process.env.AI_PORT || 3001);
-const host = process.env.AI_HOST || "127.0.0.1";
-server.listen(port, host, () => console.log(`StrataForge AI API listening on ${host}:${port}`));
+if (!process.env.VERCEL) {
+  const server = createServer(apiHandler);
+  const port = Number(process.env.AI_PORT || 3001);
+  const host = process.env.AI_HOST || "127.0.0.1";
+  server.listen(port, host, () => console.log(`StrataForge AI API listening on ${host}:${port}`));
+}
