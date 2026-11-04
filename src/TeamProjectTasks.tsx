@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { CrmIcon, DatePicker, ErrorBox, Loading, Modal, PageHeader, StageDropdown, useAuth, useToast } from "@/crm/shared";
 import { ImagePicker, RecordImages, uploadRecordImages } from "@/crm/images";
 import { createClient as db } from "@/lib/supabase/client";
+import { compactRecordId, decodeRecordId, recordPath } from "@/crm/record-links";
 
 type ProjectOption = { project_id: string; project_name: string; project_status: string; task_count: number };
 type ProjectTask = { task_id: string; project_id: string; project_name: string; title: string; description: string | null; due_at: string | null; task_status: string; development_stage: string; is_claimed: boolean; assigned_to_me: boolean };
@@ -24,7 +25,8 @@ export default function TeamProjectTasks() {
   const { founder } = useAuth();
   const notify = useToast();
   const [params, setParams] = useSearchParams();
-  const requestedProject = params.get("project") ?? "";
+  const requestedProjectToken = params.get("project") ?? "";
+  const requestedProject = decodeRecordId(requestedProjectToken);
   const [projects, setProjects] = useState<ProjectOption[] | null>(null);
   const [tasks, setTasks] = useState<ProjectTask[] | null>(null);
   const [selectedProject, setSelectedProject] = useState(requestedProject);
@@ -64,11 +66,12 @@ export default function TeamProjectTasks() {
       setProjects(rows);
       const matched = rows.some((project) => project.project_id === requestedProject) ? requestedProject : "";
       setSelectedProject(matched);
-      if (requestedProject && matched !== requestedProject) setParams({}, { replace: true });
+      if (requestedProjectToken && matched !== requestedProject) setParams({}, { replace: true });
+      else if (matched && requestedProjectToken !== compactRecordId(matched)) setParams({ project: compactRecordId(matched) }, { replace: true });
     } catch (error) {
       setProjectError(error instanceof Error ? error.message : "The project list could not be loaded.");
     }
-  }, [requestedProject, setParams]);
+  }, [requestedProject, requestedProjectToken, setParams]);
 
   const loadTasks = useCallback(async (projectId: string, options: { silent?: boolean } = {}) => {
     const requestId = ++taskRequestId.current;
@@ -135,7 +138,7 @@ export default function TeamProjectTasks() {
   function chooseProject(projectId: string) {
     pendingArrivalRef.current = null;
     setSelectedProject(projectId);
-    setParams(projectId ? { project: projectId } : {}, { replace: true });
+    setParams(projectId ? { project: compactRecordId(projectId) } : {}, { replace: true });
   }
 
   async function addTask(event: FormEvent<HTMLFormElement>) {
@@ -287,7 +290,7 @@ export default function TeamProjectTasks() {
   if (!founder) return <Loading/>;
   const selfAssigneeName = founder.name?.trim().split(/\s+/)[0];
   const selfAssigneeLabel = selfAssigneeName ? `You (${selfAssigneeName})` : "You";
-  const backHref = selectedProject ? `/projects/${selectedProject}` : "/projects";
+  const backHref = selectedProject ? recordPath("project", selectedProject) : "/projects";
   const backLabel = selectedProject ? "Back to project" : "Back to projects";
   const backButton = <Link className="button button-secondary team-task-back-button" to={backHref}><span aria-hidden="true">←</span>{backLabel}</Link>;
   const allProjectsButton = <button className="button button-secondary team-task-back-button" type="button" onClick={() => chooseProject("")}><span aria-hidden="true">←</span>All projects</button>;

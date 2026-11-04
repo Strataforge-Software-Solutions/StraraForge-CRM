@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type DragEvent as ReactDragEvent, typ
 import { Link, useLocation } from "react-router-dom";
 import { db, stageLabels, cx, dateText, isPhoneLikeContactName, rememberLeadStageTransition, useAuth, useToast, CrmIcon, PageHeader, Loading, ErrorBox, Metric, Modal, StageDropdown } from "./shared";
 import { LeadForm } from "./leads";
+import { recordPath } from "./record-links";
 
 const dealLanes = [
   { key: "new", title: "New Leads", stages: ["new"], dropStage: "new" },
@@ -115,12 +116,12 @@ export function TasksDeals() {
         const laneLeads = leads?.filter((lead) => (lane.stages as readonly string[]).includes(lead.stage)) ?? [];
         return <section className={cx("td-lane", `td-lane-${lane.key}`, dropStage === lane.dropStage && canDrop && "is-drop-target")} key={lane.key} aria-label={`${lane.title}, ${leads ? laneLeads.length : "loading"} deals${canDrop ? ", drop target" : ""}`} onDragOver={lane.dropStage ? (event) => allowDrop(event, lane.dropStage) : undefined} onDrop={lane.dropStage ? (event) => dropLead(event, lane.dropStage) : undefined}>
           <header className="td-lane-header"><div className="td-lane-heading"><span className="td-lane-dot" aria-hidden="true"/><h3>{lane.title}</h3></div><div className="td-lane-tools"><span className="td-lane-count">{leads ? laneLeads.length : "…"}</span><button type="button" className="td-lane-add" aria-label="Add a new lead to New Leads" title="Add a new lead to New Leads" onClick={() => setLeadOpen(true)}><CrmIcon name="plus"/></button></div></header>
-          <div className="td-lane-cards">{!leads ? <p className="td-lane-empty" role="status">Loading deals…</p> : laneLeads.length ? laneLeads.map((lead) => {
+          <div className="td-lane-cards">{!leads ? <Loading label="Loading deals…" className="td-lane-empty"/> : laneLeads.length ? laneLeads.map((lead) => {
             const isMoving = busy === lead.id && movableStages.includes(lead.stage);
             const canDrag = movableStages.includes(lead.stage) && !busy;
             const showContact = lead.contact_name && !isPhoneLikeContactName(lead.contact_name);
             return <article className={cx("td-deal-card", draggedId === lead.id && "is-dragging", isMoving && "is-saving")} key={lead.id} draggable={canDrag} aria-busy={isMoving} onDragStart={(event) => startDrag(event, lead)} onDragEnd={() => { setDraggedId(""); setDropStage(""); }}>
-              <div className="td-deal-card-head"><Link className="td-deal-card-title" to={`/leads/${lead.id}`}>{lead.company_name}</Link><Link className="td-deal-card-open" to={`/leads/${lead.id}`} aria-label={`Open ${lead.company_name} lead`} title="Open lead details"><CrmIcon name="more"/></Link></div>
+              <div className="td-deal-card-head"><Link className="td-deal-card-title" to={recordPath("lead", lead.id)}>{lead.company_name}</Link><Link className="td-deal-card-open" to={recordPath("lead", lead.id)} aria-label={`Open ${lead.company_name} lead`} title="Open lead details"><CrmIcon name="more"/></Link></div>
               {showContact && <p className="td-deal-card-contact">{lead.contact_name}</p>}
               {lead.source && <span className="td-deal-card-source">{lead.source}</span>}
               <div className="td-deal-card-meta"><span className="td-deal-card-date"><CrmIcon name="calendar"/>{lead.next_follow_up_at ? <time dateTime={lead.next_follow_up_at}>{dateText(lead.next_follow_up_at)}</time> : <span>No follow-up</span>}</span>{showContact && <span className="td-deal-card-avatar" title={`Contact: ${lead.contact_name}`} aria-label={`Contact: ${lead.contact_name}`}>{contactInitials(lead.contact_name)}</span>}</div>

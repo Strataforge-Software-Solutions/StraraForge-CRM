@@ -136,7 +136,7 @@ export const useToast = () => useContext(ToastContext);
 export function Gate() {
   const { founder, ready } = useAuth();
   const location = useLocation();
-  if (!ready) return <div className="page-loading" role="status">Loading your workspace…</div>;
+  if (!ready) return <div className="workspace-loading" role="status" aria-live="polite" aria-busy="true"><img className="workspace-loading-animation" src="/blocks-loader.svg" alt=""/><span className="workspace-loading-static" aria-hidden="true">{Array.from({ length: 9 }, (_, index) => <i key={index}/>)}</span><span className="workspace-loading-label">Loading your workspace…</span></div>;
   if (!founder) return <Navigate to={getSupabaseConfig() ? "/sign-in" : "/setup"} replace state={{ from: location.pathname }} />;
   if (!founder.workspaceId) return <Navigate to="/access-pending" replace />;
   if (founder.aal !== "aal2" && location.pathname !== "/verify") return <Navigate to="/verify" replace />;
